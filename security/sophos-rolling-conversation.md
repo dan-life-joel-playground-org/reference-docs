@@ -123,4 +123,87 @@ If you're working inside a VM without a Sophos agent: Live Response, Live Discov
 
 ---
 
+---
+
+## Session 1 (continued) — Thursday, April 23, 2026 — 9:30 PM CDT
+
+### Question 3: Hyper-V External Switch + WiFi — Are We Stuck with NAT?
+
+**Dan's concern:** Hyper-V can't create an External virtual switch when using WiFi, so VM traffic is stuck going through NAT (Default Switch), meaning Sophos on the host intercepts everything.
+
+#### The WiFi + External Switch Situation
+
+Dan is mostly right, but it's more "fragile and dangerous" than "impossible." Here's the real picture:
+
+**Hyper-V technically CAN create an external switch bound to a WiFi adapter.** The Virtual Switch Manager will let you select it. But it is an absolute minefield:
+
+- It frequently breaks the HOST's internet connection entirely when you do it
+- Some WiFi adapters need specific driver settings disabled (Packet Coalescing, Large Send Offload v2) to not die
+- The connection is unreliable — DHCP failures in the VM, intermittent drops
+- Intel AX210 and newer WiFi 6/6E adapters are particularly problematic
+- Multiple forum threads full of people who spent hours fighting this and gave up
+
+Microsoft's own forums are littered with people saying "creating an external switch to Wi-Fi can be dangerous" and "I lost internet on the host and had to reboot twice." This is a known, long-standing limitation of Hyper-V's architecture — the extensible switch was designed around wired Ethernet NICs, and WiFi adapters don't play well with the bridging model Hyper-V uses.
+
+**So yes, practically speaking, you're stuck with the Default Switch (NAT) on Hyper-V over WiFi.**
+
+#### But Here's the Thing — NAT Isn't as Bad as You Think
+
+Even with VM traffic going through NAT on the host, Sophos's ability to mess with that traffic is significantly limited compared to what it does to native host processes:
+
+**What Sophos CAN'T do to NAT'd VM traffic:**
+
+1. **No HTTPS decryption.** Sophos's SSL/TLS decryption works by injecting its own CA certificate into the host's certificate store and MitM'ing browser connections. Your VM's browsers and tools DON'T have the Sophos CA cert installed. Sophos can't decrypt your HTTPS traffic from the VM. Your `pip install`, `npm install`, `git clone` over HTTPS — all encrypted end-to-end, Sophos can't see inside them.
+
+2. **No process-level attribution.** On the host, Sophos sees "git.exe is making a connection to github.com" and can apply per-process rules. Through NAT, Sophos just sees the NAT/ICS service handling traffic. It doesn't know whether it's git, python, curl, or a browser inside the VM. It can't apply process-specific blocking.
+
+3. **No behavioral detection.** SSPService.exe monitors process behavior on the HOST. It has zero visibility into what processes are doing inside the VM. No exploit prevention, no dynamic shellcode detection, no application lockdown.
+
+4. **No file scanning.** SophosFileScanner.exe can't touch files inside the VM's guest filesystem. Your builds, your downloads once they're inside the VM — completely unscanned.
+
+**What Sophos CAN potentially do to NAT'd VM traffic:**
+
+1. **IP-based blocking.** If Sophos has IP reputation lists and the VM tries to reach a blacklisted IP, the host's Network Threat Protection could potentially drop that connection. This is unlikely to affect GitHub, PyPI, npm registries, or standard dev resources.
+
+2. **SNI-based URL filtering.** For HTTPS connections, the hostname (SNI) is visible in the initial TLS handshake before encryption kicks in. Sophos's Web Protection could theoretically block connections based on the destination hostname. But again, developer resources wouldn't be on block lists.
+
+3. **IPS packet inspection.** Sophos's IPS scans traffic "at the lowest level." This could theoretically flag unusual traffic patterns. But standard HTTPS traffic to well-known hosts won't trigger this.
+
+4. **HTTP (non-encrypted) blocking.** If you're hitting plain HTTP URLs (rare these days), Sophos could inspect and block the content. Almost everything is HTTPS now.
+
+#### The Practical Bottom Line
+
+For your actual use case — installing dev tools, running builds, doing Git operations, running Python scripts — **NAT through Sophos is fine.** The things that were hurting you were:
+
+| Problem | Fixed by VM? | NAT an issue? |
+|---------|-------------|---------------|
+| Build slowdowns from file scanning | YES | No |
+| Python/scripts blocked by exploit prevention | YES | No |
+| Tool installs flagged as malware | YES | No |
+| HitmanPro CPU overhead | YES | No |
+| Git SSH blocked by MTD | YES | No (Sophos can't attribute process) |
+| HTTPS package downloads blocked | YES | No (can't decrypt without CA cert in VM) |
+| General CPU drain from Sophos services | Partially (more CPU for VM) | N/A |
+
+The network interception was never the main problem. The main problems were file scanning, behavioral detection, and exploit prevention — ALL of which are completely irrelevant inside the VM regardless of network mode.
+
+#### Alternative: VirtualBox
+
+If for some reason NAT becomes a real problem, VirtualBox handles WiFi bridging differently and more gracefully than Hyper-V. However, Hyper-V and VirtualBox can't run simultaneously (they conflict over the hypervisor). You'd have to disable Hyper-V to use VirtualBox, which may conflict with other things on a corporate machine (Windows Sandbox, WSL2, etc.).
+
+#### Alternative: WSL2
+
+WSL2 runs a real Linux kernel in a lightweight VM. It uses NAT networking by default (same as Hyper-V Default Switch). All the same analysis applies — Sophos can't see inside WSL2's filesystem or processes. And it's lighter weight than a full VM. Downside: WSL2 networking has its own quirks, and Sophos might have specific hooks for WSL2 that it doesn't have for regular VMs. I don't know — would need to research that specifically.
+
+### Updated Action Items
+- [ ] Dan: Set up a Hyper-V VM using Default Switch (NAT is fine for dev work)
+- [ ] Dan: Don't waste time fighting WiFi external switch — not worth the pain
+- [ ] Dan: Ask Randy to exclude VM disk file paths from Sophos scanning (I/O performance)
+- [ ] Dan: Consider WSL2 as lighter-weight alternative (needs research on Sophos interaction)
+- [ ] Dan: Verify Sophos for Virtual Environments (SSVM) is NOT deployed
+- [x] Joel: Research Hyper-V WiFi external switch limitations — DONE, it's a minefield
+- [x] Joel: Research Sophos NAT traffic interception capabilities — DONE, minimal risk for dev work
+
+---
+
 *This is a living document. New sessions will be appended below.*
