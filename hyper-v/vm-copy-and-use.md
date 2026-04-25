@@ -151,6 +151,68 @@ Do this BEFORE you copy or export. It's a required step for any VM you intend to
 
 ---
 
+## Processor Settings — What Every Field Means
+
+**Host CPU:** Intel Xeon Gold 6208U — 16 cores, 32 threads (Hyper-Threading). Hyper-V sees 32 logical processors (LPs).
+
+### Number of virtual processors
+
+How many of the host's 32 LPs the VM can use. The guest OS sees exactly this many CPUs. Set this to match what you want the VM to have. With SMT/Hyper-Threading enabled, use even numbers.
+
+**Recommendation for single-VM-on-dedicated-box:** 28. Leaves 4 LPs for the host OS so it stays responsive.
+
+### Virtual machine reserve (percentage)
+
+Guaranteed minimum CPU. The host promises this VM at least this percentage of its assigned vCPUs' capacity, no matter what. If the host can't honor the reserve at VM startup, the VM refuses to start. Default is 0 (no guarantee).
+
+**Recommendation for single VM:** Leave at 0. Nothing to compete with.
+
+### Percent of total system resources (under reserve)
+
+**Read-only. You cannot edit this.** Calculated: (vCPUs / total LPs) × reserve %. Shows what the reserve means in terms of the whole host. Example: 28 vCPUs, 50% reserve → 28/32 × 50% = 43.75%.
+
+### Virtual machine limit (percentage)
+
+Ceiling — the maximum percentage of its assigned vCPUs the VM can consume. At 100%, no cap. At 50%, each vCPU could only use half its capacity even if the host CPU is idle. This prevents a runaway VM from starving others.
+
+**Recommendation for single VM:** Leave at 100.
+
+### Percent of total system resources (under limit)
+
+**Read-only. You cannot edit this.** Calculated: (vCPUs / total LPs) × limit %. With 1 vCPU at 100% limit, this shows 3% — meaning the VM can use 3% of the whole host. With 28 vCPUs at 100%, this shows 87.5%.
+
+### Relative weight
+
+Priority number from 1 to 10,000. Only matters when multiple VMs fight for CPU simultaneously. Higher weight = more CPU time during contention. When there's no contention, this does nothing. Default is 100.
+
+**Recommendation for single VM:** Leave at 100. Irrelevant with one VM.
+
+---
+
+## RAM Configuration
+
+The VM currently has 8192 MB (8 GB). For a single VM on a dedicated host, give it most of the host's physical RAM minus 2-4 GB for the host OS. Check total installed RAM on the host:
+
+```powershell
+(Get-CimInstance Win32_PhysicalMemory | Measure-Object Capacity -Sum).Sum / 1GB
+```
+
+**General guidance:**
+- Host OS needs ~2-4 GB to stay healthy
+- If host has 64 GB installed → give VM 60 GB
+- If host has 128 GB installed → give VM 124 GB
+- If host has 32 GB installed → give VM 28 GB
+
+Change in VM Settings → Memory, or:
+
+```powershell
+Set-VMMemory -VMName "Win-10-Encrypted" -StartupBytes 60GB
+```
+
+(VM must be off to change this.)
+
+---
+
 ## Notes & lessons learned
 
 - 2026-04-24: Win-10-Encrypted — TPM turned off before copy. Required because this VM will be distributed.
