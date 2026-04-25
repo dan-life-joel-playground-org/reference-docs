@@ -12,6 +12,10 @@
 
 Use this when the VM is **shut down** and has **no checkpoints**.
 
+### 0. Turn off TPM (if distributing)
+
+In Hyper-V Manager: VM Settings → Security → uncheck "Enable Trusted Platform Module." Do this before anything else.
+
 ### 1. Verify the VM is off
 
 ```powershell
@@ -87,6 +91,10 @@ Start-VM -Name "Win-10-Encrypted-COPY"
 
 Use this when you're not sure about checkpoints, or when you want a guaranteed clean portable package.
 
+### 0. Turn off TPM (if distributing)
+
+Same as Option A — VM Settings → Security → uncheck TPM. Do this before export.
+
 ### 1. Shut down the VM (same as above)
 
 ### 2. Merge checkpoints (same as above)
@@ -122,11 +130,13 @@ Remove-Item -Path "D:\records\vm\exports\Win-10-Encrypted" -Recurse -Force
 
 ---
 
-## When do I need to worry about TPM?
+## TPM — Turn It Off Before You Copy
 
-- **Copying for your own use on the same host:** Don't worry about it. If TPM is on, it carries over. If it's off (like Win-10-Encrypted), nothing to do.
-- **Giving the VM to someone else or moving to a different host:** Detach vTPM before export. The vTPM is cryptographically tied to the host it was created on and won't transfer.
-- **Check TPM status:** VM Settings → Security → "Enable Trusted Platform Module" checkbox.
+**If you will distribute this VM (give it to someone else, move it to a different host), turn off TPM before copying.** A vTPM is cryptographically tied to the host it was created on. A recipient on a different host cannot unwrap the key protector and the VM will not boot.
+
+**How to turn it off:** VM Settings → Security → uncheck "Enable Trusted Platform Module."
+
+Do this BEFORE you copy or export. It's a required step for any VM you intend to distribute.
 
 ---
 
@@ -143,7 +153,7 @@ Remove-Item -Path "D:\records\vm\exports\Win-10-Encrypted" -Recurse -Force
 
 ## Notes & lessons learned
 
-- 2026-04-24: Win-10-Encrypted has TPM already off. No vTPM concerns for this VM.
+- 2026-04-24: Win-10-Encrypted — TPM turned off before copy. Required because this VM will be distributed.
 - Export-VM copies the full VHDX to a staging folder, which is why it takes so long on big disks. Folder copy skips that intermediate step.
 
 ---
