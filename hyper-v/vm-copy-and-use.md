@@ -134,20 +134,42 @@ Remove-Item -Path "D:\records\vm\exports\Win-10-Encrypted" -Recurse -Force
 
 This is the end-to-end process for making a distributable copy of a VM. Your source VM is never modified by this process (except temporarily turning off TPM, which you turn back on when done).
 
+### Prepare the source VM (do this once, before any copies)
+
+Boot the source VM and do the following inside the guest:
+
+**1. Install all Windows updates.** Settings → Update & Security → Check for updates. Install everything. Reboot. Repeat until there are no more updates. This can take a long time, but do it once on the source and every copy inherits a fully patched OS — you never have to do it again per copy.
+
+**2. Disable reserved storage.** From an elevated PowerShell inside the guest:
+
+```powershell
+DISM /Online /Set-ReservedStorageState /State:Disabled
+```
+
+Verify:
+
+```powershell
+DISM /Online /Get-ReservedStorageState
+```
+
+Reserved storage holds disk space for future updates. If it's active when sysprep runs, sysprep fails with `0x800F0975`. Disabling it on the source means every copy is already clean.
+
+**3. Shut down the source VM.**
+
 ### On the source host, before copying
 
-**1. Turn off TPM on the source VM.**
+**4. Turn off TPM on the source VM.**
 VM Settings → Security → uncheck "Enable Trusted Platform Module." A vTPM is cryptographically tied to the host it was created on. A recipient on a different host cannot unwrap the key protector and the VM will not boot. This is a required step for any VM you intend to distribute.
 
-**2. Copy the VM** using Option A (folder copy) or Option B (export/import) from above.
+**5. Copy the VM** using Option A (folder copy) or Option B (export/import) from above.
 
-**3. Turn TPM back on your source** if you want it. Your source is done — it goes back to normal.
+**6. Turn TPM back on your source** if you want it. Your source is done — it goes back to normal.
 
 ### On the copy (the one going out the door)
 
-**4. Boot the copy.**
+**7. Boot the copy.**
 
-**5. Inside the copy, run sysprep.** Open an elevated PowerShell or cmd inside the guest:
+**8. Inside the copy, run sysprep.** Open an elevated PowerShell or cmd inside the guest:
 
 ```
 C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
@@ -155,9 +177,17 @@ C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
 
 This strips the machine SID (security identifier), resets Windows activation, and shuts the VM down automatically. Without this step, every copy has the same SID — two machines with the same SID on the same network cause authentication collisions and unpredictable security behavior.
 
-If sysprep fails, check `C:\Windows\System32\Sysprep\Panther\setupact.log`. The usual culprit is a preinstalled Appx package blocking generalization. Remove it with `Remove-AppxPackage`, retry.
+**If sysprep fails**, check the log:
 
-**6. Do not boot the copy again.** After sysprep shuts it down, the image is sealed. The next boot will run the Windows out-of-box experience (OOBE) — pick language, create user account, etc. That next boot is for the recipient, not you.
+```powershell
+Get-Content C:\Windows\System32\Sysprep\Panther\setupact.log | Select-String "SYSPRP" | Select-Object -Last 30
+```
+
+Common blockers:
+- **`0x800F0975` — reserved storage in use.** A pending update or servicing operation is in the way. Install all updates, reboot, then disable reserved storage with `DISM /Online /Set-ReservedStorageState /State:Disabled`. This is why we do it on the source first.
+- **Appx package blocking generalization.** The log will name the package. Remove it with `Get-AppxPackage -Name "*package.name*" | Remove-AppxPackage`, retry.
+
+**9. Do not boot the copy again.** After sysprep shuts it down, the image is sealed. The next boot will run the Windows out-of-box experience (OOBE) — pick language, create user account, etc. That next boot is for the recipient, not you.
 
 **7. (Optional) Compact the VHDX.** With the copy shut down:
 
@@ -179,9 +209,12 @@ This reclaims free space inside the VHDX and shrinks the file.
 
 | Step | Where | What |
 |---|---|---|
-| Turn off TPM | Source | Required for portability |
+| Install all updates | Inside source guest | Do once, every copy inherits |
+| Disable reserved storage | Inside source guest | Prevents sysprep `0x800F0975` failure |
+| Shut down source | Source guest | Clean shutdown |
+| Turn off TPM | Source host, VM Settings | Required for portability |
 | Copy the VM | Source host | Folder copy or export |
-| Turn TPM back on | Source | Restore your own VM |
+| Turn TPM back on | Source host | Restore your own VM |
 | Boot the copy, run sysprep | Inside copy guest | Strips SID, resets activation, shuts down |
 | Don't boot again | — | Image is sealed |
 | Recipient imports | Recipient host | Standard import |
@@ -284,6 +317,7 @@ Practically nothing. Sysprep with `/generalize` resets activation by design — 
 ## Notes & lessons learned
 
 - 2026-04-24: Win-10-Encrypted — TPM turned off before copy. Required because this VM will be distributed.
+- 2026-04-24: Sysprep failed with `0x800F0975` — reserved storage was active and updates were pending. Fix: install all updates on source, disable reserved storage with DISM, THEN copy. Do this once on source so every copy is clean.
 - Export-VM copies the full VHDX to a staging folder, which is why it takes so long on big disks. Folder copy skips that intermediate step.
 
 ---
