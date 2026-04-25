@@ -130,13 +130,63 @@ Remove-Item -Path "D:\records\vm\exports\Win-10-Encrypted" -Recurse -Force
 
 ---
 
-## TPM — Turn It Off Before You Copy
+## Full Distribution Workflow
 
-**If you will distribute this VM (give it to someone else, move it to a different host), turn off TPM before copying.** A vTPM is cryptographically tied to the host it was created on. A recipient on a different host cannot unwrap the key protector and the VM will not boot.
+This is the end-to-end process for making a distributable copy of a VM. Your source VM is never modified by this process (except temporarily turning off TPM, which you turn back on when done).
 
-**How to turn it off:** VM Settings → Security → uncheck "Enable Trusted Platform Module."
+### On the source host, before copying
 
-Do this BEFORE you copy or export. It's a required step for any VM you intend to distribute.
+**1. Turn off TPM on the source VM.**
+VM Settings → Security → uncheck "Enable Trusted Platform Module." A vTPM is cryptographically tied to the host it was created on. A recipient on a different host cannot unwrap the key protector and the VM will not boot. This is a required step for any VM you intend to distribute.
+
+**2. Copy the VM** using Option A (folder copy) or Option B (export/import) from above.
+
+**3. Turn TPM back on your source** if you want it. Your source is done — it goes back to normal.
+
+### On the copy (the one going out the door)
+
+**4. Boot the copy.**
+
+**5. Inside the copy, run sysprep.** Open an elevated PowerShell or cmd inside the guest:
+
+```
+C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown
+```
+
+This strips the machine SID (security identifier), resets Windows activation, and shuts the VM down automatically. Without this step, every copy has the same SID — two machines with the same SID on the same network cause authentication collisions and unpredictable security behavior.
+
+If sysprep fails, check `C:\Windows\System32\Sysprep\Panther\setupact.log`. The usual culprit is a preinstalled Appx package blocking generalization. Remove it with `Remove-AppxPackage`, retry.
+
+**6. Do not boot the copy again.** After sysprep shuts it down, the image is sealed. The next boot will run the Windows out-of-box experience (OOBE) — pick language, create user account, etc. That next boot is for the recipient, not you.
+
+**7. (Optional) Compact the VHDX.** With the copy shut down:
+
+```powershell
+Optimize-VHD -Path "D:\records\vm\<copy>\Virtual Hard Disks\<disk>.vhdx" -Mode Full
+```
+
+This reclaims free space inside the VHDX and shrinks the file.
+
+### What the recipient does
+
+**8. Import the VM** on their Hyper-V host (folder copy or export, same as above).
+
+**9. Attach a fresh vTPM** if they want encryption. VM Settings → Security → check "Enable Trusted Platform Module." Hyper-V generates a brand new vTPM tied to their host.
+
+**10. Boot the VM.** Windows OOBE runs — they set up their own user account, language, etc. They can then enable BitLocker if desired.
+
+### Summary
+
+| Step | Where | What |
+|---|---|---|
+| Turn off TPM | Source | Required for portability |
+| Copy the VM | Source host | Folder copy or export |
+| Turn TPM back on | Source | Restore your own VM |
+| Boot the copy, run sysprep | Inside copy guest | Strips SID, resets activation, shuts down |
+| Don't boot again | — | Image is sealed |
+| Recipient imports | Recipient host | Standard import |
+| Recipient adds fresh vTPM | Recipient host | If they want encryption |
+| Recipient boots | Recipient host | OOBE runs, fresh identity |
 
 ---
 
