@@ -263,6 +263,24 @@ Set-VMMemory -VMName "Win-10-Encrypted" -StartupBytes 60GB
 
 ---
 
+## Windows Activation — What Happens Without It
+
+Activation verifies your copy of Windows is genuine. It does NOT downgrade your edition. A Windows 10 Pro install without activation is still Pro — it has BitLocker, Remote Desktop, Group Policy, Hyper-V, domain join. Those are edition features, not activation features.
+
+### What stops working (after 30-day grace period)
+
+Personalization only. You can't change desktop wallpaper (goes to black/default), can't change colors or themes, can't change lock screen background, can't customize the taskbar or Start menu. A permanent "Activate Windows" watermark appears in the bottom-right corner of the screen, on top of everything including fullscreen apps.
+
+### What keeps working
+
+Everything functional. All apps, files, programs. Security and quality updates continue. All Pro features (BitLocker, RDP, gpedit, Hyper-V, domain join) remain available. The OS runs indefinitely in this state.
+
+### What this means for distributing a VM
+
+Practically nothing. Sysprep with `/generalize` resets activation by design — the recipient was always going to need their own license. They boot the VM, get OOBE, set up their account, and enter their own product key whenever they want. Everything works in the meantime. The watermark is cosmetic annoyance, not a functional limitation.
+
+---
+
 ## Notes & lessons learned
 
 - 2026-04-24: Win-10-Encrypted — TPM turned off before copy. Required because this VM will be distributed.
